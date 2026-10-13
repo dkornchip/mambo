@@ -271,7 +271,7 @@
     }
   }
 
-  window.addEventListener('DOMContentLoaded', () => {
+  function boot() {
     const app = new App();
     window.BOXHORSE = { version: '1.1.0', app, BH, simulate, autopilot, POLICIES, C, STEP, followersFor,
       get game() { return app.game; },
@@ -279,5 +279,7 @@
       start(mode) { app.startRun(mode || 'endless'); },
       summary() { return app.game ? app.game.summary() : null; },
     };
-  });
+  }
+  // boot now if the document is already parsed (hosted/injected pages), else on DOMContentLoaded
+  if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', boot); else boot();
 })();
