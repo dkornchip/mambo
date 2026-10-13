@@ -5,6 +5,14 @@ next to a smug one, a "we live in a society" stat-bubble edit, a boxing-ring clo
 a chicken-coop 土鸡土鸡蛋蛋 bit) were handed to an AI with "make a game out of this", and this is what
 came back. Nobody asked for it. It plays anyway.
 
+| the box | the society |
+|---|---|
+| ![screaming in a cardboard box next to the smug one](ref/1-box.jpg) | ![we live in a society](ref/2-society.jpg) |
+
+| the ring | the farm |
+|---|---|
+| ![哦耶](ref/3-ohyeah.jpg) | ![土鸡土鸡蛋蛋](ref/4-chicken.jpg) |
+
 A one-button cardboard-box luge for the browser. A chibi horse-girl in a cardboard box goes down an
 infinite hill, screaming. The score is likes. The subtitle bar is the narrator. We live in a society.
 
