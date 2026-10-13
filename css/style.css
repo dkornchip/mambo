@@ -13,9 +13,9 @@ body { position: fixed; inset: 0; touch-action: none; -webkit-user-select: none;
 canvas#game { display: block; position: absolute; inset: 0; touch-action: none; }
 
 #ui { position: absolute; inset: 0; pointer-events: none; }
-.screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 12px; pointer-events: none; overflow: auto; }
+.screen { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding: 12px; pointer-events: none; overflow: auto; }
 .screen.hidden { display: none; }
-.screen > .card { pointer-events: auto; }
+.screen > .card { pointer-events: auto; margin: auto; } /* centred when it fits, scrollable from the top when it does not */
 #screen-over { pointer-events: auto; }
 
 .card {
@@ -53,6 +53,7 @@ canvas.hero { display: block; margin: 0 auto; width: 165px; height: 150px; }
 
 .mute { position: absolute; right: calc(env(safe-area-inset-right, 0px) + 12px); top: calc(env(safe-area-inset-top, 0px) + 82px); z-index: 5;
   background: rgba(0,0,0,0.45); color: #fff; border: 2px solid rgba(255,255,255,0.8); border-radius: 999px; font-size: 15px; width: 32px; height: 32px; cursor: pointer; pointer-events: auto; }
+#ui.menu .mute { display: none; } /* menus have their own sound toggle; the button would sit on the cards on phones */
 
 h2 { font-weight: 800; font-size: 26px; margin: 2px 0 10px; }
 h2 small { font-weight: 400; font-size: 13px; opacity: 0.65; display: block; }
@@ -80,7 +81,7 @@ h2 small { font-weight: 400; font-size: 13px; opacity: 0.65; display: block; }
 .society { font-weight: 400; font-size: clamp(22px, 5vw, 30px); color: #111; margin: 2px 0 10px; }
 .bubbles { display: flex; justify-content: space-around; align-items: flex-start; gap: 18px; margin: 6px 0 4px; }
 .bubble-col { display: flex; flex-direction: column; align-items: center; gap: 2px; transition: transform 0.6s cubic-bezier(.2,1.4,.4,1), opacity 0.6s; }
-.bubble { position: relative; background: var(--red); color: #fff; font-weight: 700; font-size: 15px; padding: 7px 11px; border-radius: 10px; white-space: nowrap; transition: transform 0.6s cubic-bezier(.2,1.4,.4,1); }
+.bubble { position: relative; background: var(--red); color: #fff; font-weight: 700; font-size: 15px; padding: 7px 11px; border-radius: 10px; max-width: 100%; text-align: center; transition: transform 0.6s cubic-bezier(.2,1.4,.4,1); }
 .bubble::after { content: ''; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); border: 8px solid transparent; border-top-color: var(--red); border-bottom: 0; }
 .bubble.dim { background: #fff; color: #333; border: 2px solid #ccc; }
 .bubble.dim::after { border-top-color: #ccc; }
@@ -104,6 +105,8 @@ h2 small { font-weight: 400; font-size: 13px; opacity: 0.65; display: block; }
   .howto { font-size: 12px; }
   canvas.hero { width: 130px; height: 118px; }
   .mini { width: 80px; } .mini.tall { width: 84px; }
+  .bubbles { gap: 12px; }
+  .over-card.best .left .bubble { transform: scale(1.1); }
 }
 @media (max-height: 560px) {
   canvas.hero { display: none; }
@@ -112,3 +115,6 @@ h2 small { font-weight: 400; font-size: 13px; opacity: 0.65; display: block; }
   .logo { font-size: 40px; }
   .mini.tall { width: 60px; }
 }
+
+/* phone safe areas, read by the renderer for the HUD and the subtitle bar */
+#ui { --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); }

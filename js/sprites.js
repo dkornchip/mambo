@@ -359,8 +359,9 @@
     // flap
     poly(ctx, [[-32, -6], [-40, -16], [-22, -16], [-20, -6]], '#c79c5f', '#7a5a33', 2);
     // label
-    ctx.fillStyle = '#5a3f22'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(o.label || '社会', 14, 10);
+    const label = o.label || (BH.sprites && BH.sprites.cjk === false ? 'SOCIETY' : '社会');
+    ctx.fillStyle = '#5a3f22'; ctx.font = 'bold ' + (label.length > 4 ? 7 : 10) + 'px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(label, 14, 10);
     ctx.textAlign = 'left';
     if (o.smashed) {
       ctx.strokeStyle = '#7a5a33'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-10, 10); ctx.lineTo(-14, 18); ctx.stroke();
@@ -370,7 +371,7 @@
     rrect(ctx, -w / 2, -h, w, h, 3, '#d3aa6c', '#7a5a33', 2.5);
     ctx.fillStyle = '#efe0b8'; ctx.fillRect(-4, -h, 8, h);
     ctx.fillStyle = '#5a3f22'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(['FRAGILE', '社会', '↑↑', 'TOP'][seed % 4], w / 4 + 2, -h / 2 + 3);
+    ctx.fillText(['FRAGILE', (BH.sprites && BH.sprites.cjk === false ? 'HEAVY' : '社会'), '↑↑', 'TOP'][seed % 4], w / 4 + 2, -h / 2 + 3);
     ctx.textAlign = 'left';
   }
 
@@ -423,7 +424,7 @@
   const CHARACTERS = {
     tann: { name: 'box horse', draw: drawTannhauser, mass: 1.0, landWindow: 35, perfectWindow: 12, airGrav: 1.0, glyph: '啊', latin: 'A', desc: 'Screams the whole way down. The protagonist.' },
     gold: { name: 'the smug one', draw: drawGoldShip, mass: 1.15, landWindow: 30, perfectWindow: 12, airGrav: 1.1, glyph: '', latin: '', desc: 'Dives harder. Lands worse. Does not scream. Does not care.' },
-    teio: { name: 'the cheerleader', draw: drawTeio, mass: 0.85, landWindow: 40, perfectWindow: 14, airGrav: 0.85, glyph: '加油', latin: 'go', desc: 'Lighter. Floats longer. Forgiving landings. Can and will.' },
+    teio: { name: 'the cheerleader', draw: drawTeio, mass: 0.85, landWindow: 40, perfectWindow: 14, airGrav: 0.9, glyph: '加油', latin: 'go', desc: 'Lighter. Floats longer. Forgiving landings. Can and will.' },
   };
 
   BH.sprites = { R, drawTannhauser, drawGoldShip, drawTeio, drawBoxBack, drawBoxFront, drawBoxStackUnit, drawChicken, drawEgg, drawFeather, drawHat, CHARACTERS, helpers: { circle, ellipse, rrect, poly } };

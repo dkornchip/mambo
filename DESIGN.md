@@ -25,11 +25,16 @@ Game over is the "we live in a society" meme: your stats bubble vs. the 0 / 0 / 
 
 ## The pressure: CLOUT meter
 
-- 0..100, starts at 100. Drains at 4 / s base, +0.6 / s per difficulty tier.
-- Refill: egg +4, golden egg +25, clean landing +5, perfect +10, chicken +3, trick +3, Teio cheer +15.
-- While speed >= 18 m/s drain pauses ("feeding the algorithm"). Going fast is how you survive; going fast is
-  how you die. That tension is the whole game.
-- Clout hits 0 -> game over: "The algorithm moved on. We live in a society."
+(Numbers below are the shipped ones in `js/game.js` `C`; they were tuned with the headless bot, see README.)
+
+- 0..100, starts at 100. Drains at 4.8 / s on lap 1, +2.4 / s per lap. Drain pauses above 18 m/s on lap 1,
+  +3 m/s per lap ("feeding the algorithm"). Going fast is how you survive; going fast is how you die.
+- Refill: egg +0.8, spicy egg +8, golden egg +15, chicken +0.5, clean landing +3, perfect +6, flip +3,
+  smashed box +2 each, the cheerleader +15. Clout gained above the cap pays out as likes ("overflow").
+- Clout at 0 -> 2.5 s of grace at half speed, "(cancelled?)". Gain 5 clout in that window and you clutch back
+  to 15 (drain frozen 2 s, 30 s before another grace is possible). A bonk during grace, or the timer, ends it.
+- Targets the bot harness checks: a player who never presses dies in 30-45 s, always-hold in 40-90 s, a sloppy
+  diver in 90-180 s, a perfect diver in 150-300 s, and nobody survives 600 s.
 
 ## Scoring
 

@@ -126,6 +126,9 @@
     constructor() {
       this.save = loadSave();
       this.cjk = detectCJK();
+      BH.sprites.cjk = this.cjk;
+      this.pointers = new Set();
+      this.restartFrom = null;
       this.canvas = document.getElementById('game');
       this.renderer = new BH.render.Renderer(this.canvas);
       this.ui = new BH.ui.UI(this);
@@ -149,8 +152,9 @@
       const d = BH.rng.dailySeed();
       const seed = mode === 'daily' ? d.seed : (Math.floor(Math.random() * 4294967296) >>> 0);
       if (mode === 'daily' && this.save.daily.date !== d.key) this.save.daily = { date: d.key, likes: 0, dist: 0 };
-      this.game = new Game({ seed, mode, charId: this.save.char, hat: this.save.hat, showHint: this.save.runs < 3, cjk: this.cjk });
+      this.game = new Game({ seed, mode, dailyKey: mode === 'daily' ? d.key : null, charId: this.save.char, hat: this.save.hat, showHint: this.save.runs < 3, cjk: this.cjk });
       this.game.on('perkOffer', () => this.ui.showPerks(this.game));
+      this.game.on('perk', () => this.ui.hideAll()); // the timeout auto-pick must close the DOM picker too
       this.game.on('gameover', (e) => this.onGameOver(e));
       this.mode = 'playing'; this.overShown = false; this.held = false;
       this.ui.hideAll();
@@ -166,17 +170,17 @@
       if (newLikes) sv.bestLikes = g.likes; if (newDist) sv.bestDist = Math.round(g.distance);
       if (g.maxCombo > sv.bestCombo) sv.bestCombo = g.maxCombo;
       if (g.longestScream > (sv.bestScream || 0)) sv.bestScream = g.longestScream;
-      if (g.mode === 'daily') { const d = BH.rng.dailySeed(); if (sv.daily.date !== d.key) sv.daily = { date: d.key, likes: 0, dist: 0 }; sv.daily.likes = Math.max(sv.daily.likes, g.likes); sv.daily.dist = Math.max(sv.daily.dist, Math.round(g.distance)); }
+      if (g.mode === 'daily') { if (sv.daily.date !== g.dailyKey) sv.daily = { date: g.dailyKey, likes: 0, dist: 0 }; sv.daily.likes = Math.max(sv.daily.likes, g.likes); sv.daily.dist = Math.max(sv.daily.dist, Math.round(g.distance)); }
       this.persist();
       this.lastResult = { followers, newLikes, newDist, milestones: followersFor.last };
     }
     pickPerk(i) { if (this.game && this.game.state === 'perk') { this.game.choosePerk(i); this.ui.hideAll(); } }
     pause() { if (this.mode === 'playing' && this.game && this.game.state !== 'over') { this.mode = 'paused'; this.held = false; this.game.setInput(false); this.ui.showPause(); } }
-    resume() { if (this.mode === 'paused') { this.mode = 'playing'; this.last = performance.now(); this.ui.hideAll(); if (this.game.state === 'perk') this.ui.showPerks(this.game); } }
-    toMenu() { this.mode = 'menu'; this.game = null; this.newAttract(); this.ui.show('title'); }
+    resume() { if (this.mode === 'paused') { BH.audio.unlock(); BH.audio.startMusic(this.game.biome); this.mode = 'playing'; this.last = performance.now(); this.ui.hideAll(); if (this.game.state === 'perk') this.ui.showPerks(this.game); } }
+    toMenu() { BH.audio.stopMusic(); this.mode = 'menu'; this.game = null; this.newAttract(); this.ui.show('title'); }
     shareText(game, result) {
       const scream = game.screamText(game.longestScream) || '(nothing)';
-      return 'box horse · ' + (game.mode === 'daily' ? 'daily ' + BH.rng.dailySeed().key : 'endless') + '\n' +
+      return 'box horse · ' + (game.mode === 'daily' ? 'daily ' + game.dailyKey : 'endless') + '\n' +
         scream + '\n' +
         '💬 ' + game.comments + ' · ❤️ ' + game.likes.toLocaleString() + ' · 👤 +' + result.followers + '   |   💬 0 · ❤️ 0 · 👤 0\n' +
         Math.round(game.distance).toLocaleString() + ' m · we live in a society';
@@ -200,11 +204,16 @@
       const down = (e) => {
         if (e.target && e.target.closest && e.target.closest('button')) return;
         BH.audio.unlock();
-        if (this.canRestart()) { this.startRun(this.game.mode); return; }
+        if (this.canRestart()) { this.restartFrom = { x: e.clientX, y: e.clientY }; return; } // restart on the completed tap, so a scroll does not restart
         if (e.target && e.target.closest && e.target.closest('.card')) return;
-        if (this.mode === 'playing') { this.setHeld(true); if (e.cancelable) e.preventDefault(); }
+        if (this.mode === 'playing') { this.pointers.add(e.pointerId); this.setHeld(true); if (e.cancelable) e.preventDefault(); }
       };
-      const up = () => this.setHeld(false);
+      const up = (e) => {
+        const from = this.restartFrom; this.restartFrom = null;
+        if (from && e.type === 'pointerup' && this.canRestart() && Math.hypot(e.clientX - from.x, e.clientY - from.y) < 10) { this.startRun(this.game.mode); return; }
+        this.pointers.delete(e.pointerId);
+        if (this.pointers.size === 0) this.setHeld(false); // a second finger lifting must not release the first
+      };
       window.addEventListener('pointerdown', down, { passive: false });
       window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
       window.addEventListener('contextmenu', (e) => { if (e.target === this.canvas) e.preventDefault(); });
@@ -220,15 +229,18 @@
           if (this.canRestart() && (isHold || k === 'Enter')) this.startRun(this.game.mode);
           return;
         }
-        if (this.mode === 'menu' && this.ui.current === 'title' && (k === 'Space' || k === 'Enter')) { this.startRun('endless'); return; }
+        if (this.mode === 'menu' && this.ui.current === 'title' && (k === 'Space' || k === 'Enter')) {
+          if (!(e.target && e.target.closest && e.target.closest('button'))) this.startRun('endless'); // a focused button handles its own Enter
+          return;
+        }
         if (this.mode === 'playing' && isHold) { BH.audio.unlock(); this.setHeld(true); }
       });
       window.addEventListener('keyup', (e) => {
         const k = e.code;
         if (k === 'Space' || k === 'ArrowUp' || k === 'ArrowDown' || k === 'KeyW' || k === 'KeyS') this.setHeld(false);
       });
-      window.addEventListener('blur', () => { this.setHeld(false); this.pause(); });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.setHeld(false); this.pause(); } });
+      window.addEventListener('blur', () => { this.pointers.clear(); this.setHeld(false); this.pause(); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.pointers.clear(); this.setHeld(false); this.pause(); BH.audio.stopMusic(); } });
       window.addEventListener('resize', () => this.renderer.resize());
     }
 

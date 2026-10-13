@@ -12,7 +12,7 @@
   };
 
   function unlock() {
-    if (A.unlocked) { if (A.ctx && A.ctx.state === 'suspended') A.ctx.resume().catch(() => {}); return; }
+    if (A.unlocked) { if (A.ctx && (A.ctx.state === 'suspended' || A.ctx.state === 'interrupted')) A.ctx.resume().catch(() => {}); return; }
     try {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return;
@@ -196,6 +196,7 @@
     if (!noiseBuf) noise({ vol: 0.0001, dur: 0.01 }); // ensure buffer exists
     const c = A.ctx;
     const stepDur = 60 / M.tempo / 4;
+    if (M.nextTime < c.currentTime) M.nextTime = c.currentTime + 0.05; // stalled: drop the missed steps instead of firing them all at once
     while (M.nextTime < c.currentTime + 0.25) {
       const pat = PATTERNS[M.biome] || PATTERNS.street;
       scheduleStep(M.nextTime, M.step % 16, pat, pat.root);

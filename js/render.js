@@ -37,6 +37,12 @@
       this.dpr = dpr; this.W = W; this.H = H;
       this.canvas.width = Math.round(W * dpr); this.canvas.height = Math.round(H * dpr);
       this.canvas.style.width = W + 'px'; this.canvas.style.height = H + 'px';
+      // phone safe areas (notch, home indicator): the HUD and the subtitle bar step inside them
+      this.safeTop = 0; this.safeBottom = 0;
+      try {
+        const ui = document.getElementById('ui');
+        if (ui) { const cs = getComputedStyle(ui); this.safeTop = parseFloat(cs.getPropertyValue('--sat')) || 0; this.safeBottom = parseFloat(cs.getPropertyValue('--sab')) || 0; }
+      } catch (e) { /* no DOM, no insets */ }
     }
 
     // ---- projection ----------------------------------------------------------
@@ -49,7 +55,7 @@
       // keep the rider on screen even when the camera looks far ahead (portrait phones)
       const want = W * (small ? 0.3 : 0.38);
       const riderOff = (game.rider.x - this.cam.x) * this.scale;
-      this.ox = Math.max(want, W * 0.13 - riderOff);
+      this.ox = Math.max(want, W * (small ? 0.24 : 0.14) - riderOff);
       this.oy = H * 0.56;
       if (game.shake > 0) { const m = game.shake * 9; this.sx = (Math.random() - 0.5) * m; this.sy = (Math.random() - 0.5) * m; }
       else { this.sx = 0; this.sy = 0; }
@@ -64,8 +70,6 @@
       const ctx = this.ctx;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.setup(game);
-      const gray = game.grace && this.filterOK;
-      if (gray) ctx.filter = 'grayscale(1)';
       const camX = Math.max(0, this.cam.x);
       const bi = biomeIndexAt(camX);
       const biome = biomeAt(camX);
@@ -80,8 +84,10 @@
       this.drawParticles(game);
       if (biome === 'gym' || (fade > 0 && nextBiome === 'gym')) this.drawRopes(game, biome === 'gym' ? 1 : fade);
       this.drawPopups(game);
-      if (gray) ctx.filter = 'none';
-      else if (game.grace) { ctx.fillStyle = 'rgba(128,128,128,0.45)'; ctx.fillRect(0, 0, this.W, this.H); }
+      if (game.grace) {
+        // one desaturation pass over the finished scene (a per-draw-call ctx.filter costs seconds per frame)
+        ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = '#808080'; ctx.fillRect(0, 0, this.W, this.H); ctx.restore();
+      }
       if (!opts.attract) { this.drawFaceCam(game); this.drawHUD(game); this.drawSubtitles(game); }
     }
 
@@ -97,7 +103,7 @@
       const horizon = this.wy(camY) - H * 0.02;
       ctx.save();
       switch (biome) {
-        case 'street': this.bgStreet(camX, horizon); break;
+        case 'street': this.bgStreet(camX, horizon, game); break;
         case 'farm': this.bgFarm(camX, horizon); break;
         case 'gym': this.bgGym(camX, horizon); break;
         case 'void': this.bgVoid(camX, horizon, game); break;
@@ -119,8 +125,9 @@
       }
     }
 
-    bgStreet(camX, horizon) {
+    bgStreet(camX, horizon, game) {
       const ctx = this.ctx, H = this.H;
+      const T = game.terrain;
       // tan buildings with white window grids; one window in six has her face in it
       this.decor(camX, 0.18, 26, (i, sx, s) => {
         const w = (10 + h32(i, 1) * 8) * s, hgt = (14 + h32(i, 2) * 14) * s;
@@ -146,17 +153,21 @@
         ctx.fillStyle = '#5c5c66'; ctx.fillRect(sx, horizon - 7 * s, 0.3 * s, 7 * s + H);
         ctx.fillStyle = '#ffe9a8'; ctx.beginPath(); ctx.arc(sx + 0.15 * s, horizon - 7.2 * s, 0.55 * s, 0, TAU); ctx.fill();
       });
-      // bushes, low, mostly behind the ground
-      this.decor(camX, 0.45, 23, (i, sx, s) => {
-        const baseY = horizon + 3.5 * s;
-        ctx.fillStyle = '#6fae5a'; ctx.beginPath(); ctx.arc(sx, baseY - 0.6 * s, 1.1 * s, 0, TAU); ctx.arc(sx + 1.2 * s, baseY - 0.8 * s, 0.9 * s, 0, TAU); ctx.fill();
+      // bushes and benches stand ON the track behind the rider (parallax 1, anchored to the terrain; the ground fill hides their feet)
+      const s1 = this.scale;
+      this.decor(camX, 1, 23, (i, sx, s) => {
+        if (h32(i, 8) < 0.5) return;
+        const wx = this.screenToWorldX(sx);
+        const baseY = this.wy(T.heightAt(wx)) + 0.3 * s1;
+        ctx.fillStyle = '#6fae5a'; ctx.beginPath(); ctx.arc(sx, baseY - 0.6 * s1, 1.0 * s1, 0, TAU); ctx.arc(sx + 1.1 * s1, baseY - 0.8 * s1, 0.8 * s1, 0, TAU); ctx.fill();
       });
       // one bench every ~150 m. the cheerleader sits on it.
-      this.decor(camX, 0.5, 150, (i, sx, s) => {
-        const baseY = horizon + 3.4 * s;
-        ctx.fillStyle = '#6b4a2e'; ctx.fillRect(sx, baseY - 1.3 * s, 3.4 * s, 0.4 * s); ctx.fillRect(sx, baseY - 0.7 * s, 3.4 * s, 0.35 * s);
-        ctx.fillRect(sx + 0.3 * s, baseY - 0.7 * s, 0.3 * s, 0.8 * s); ctx.fillRect(sx + 2.8 * s, baseY - 0.7 * s, 0.3 * s, 0.8 * s);
-        ctx.save(); ctx.translate(sx + 1.7 * s, baseY - 2.6 * s); ctx.scale(s / 24 * 0.9, s / 24 * 0.9);
+      this.decor(camX, 1, 150, (i, sx, s) => {
+        const wx = this.screenToWorldX(sx);
+        const baseY = this.wy(T.heightAt(wx + 1.7)) + 0.25 * s1;
+        ctx.fillStyle = '#6b4a2e'; ctx.fillRect(sx, baseY - 1.3 * s1, 3.4 * s1, 0.4 * s1); ctx.fillRect(sx, baseY - 0.7 * s1, 3.4 * s1, 0.35 * s1);
+        ctx.fillRect(sx + 0.3 * s1, baseY - 0.7 * s1, 0.3 * s1, 0.8 * s1); ctx.fillRect(sx + 2.8 * s1, baseY - 0.7 * s1, 0.3 * s1, 0.8 * s1);
+        ctx.save(); ctx.translate(sx + 1.7 * s1, baseY - 2.6 * s1); ctx.scale(s1 / 24 * 0.9, s1 / 24 * 0.9);
         S.drawTeio(ctx, { mouth: 'smile', upperOnly: true });
         ctx.restore();
       });
@@ -261,13 +272,15 @@
       this.decor(camX, 0.25, 16, (i, sx, s) => {
         const k = h32(i, 11);
         const y = horizon - (3 + k * 14) * s + Math.sin(this.t * 1.2 + i) * 0.4 * s;
-        const w = (5 + h32(i, 12) * 4) * s, hh = 1.6 * s;
-        ctx.fillStyle = '#e8332f';
-        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(sx, y, w, hh, 0.4 * s) : ctx.rect(sx, y, w, hh); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(sx + w * 0.5 - 0.3 * s, y + hh); ctx.lineTo(sx + w * 0.5 + 0.3 * s, y + hh); ctx.lineTo(sx + w * 0.5, y + hh + 0.35 * s); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold ' + Math.max(8, 0.8 * s) + 'px ' + FONT; ctx.textAlign = 'left';
+        const fs = Math.max(11, 1.1 * s);
+        ctx.font = 'bold ' + fs + 'px ' + FONT; ctx.textAlign = 'left';
         const txt = k < 0.6 ? '💬 0  ♥ 0  👤 0' : '💬 ' + Math.floor(h32(i, 13) * 900) + '  ♥ ' + Math.floor(h32(i, 14) * 5000) + '  👤 ' + Math.floor(h32(i, 15) * 2000);
-        ctx.fillText(txt, sx + 0.3 * s, y + hh * 0.72);
+        const w = ctx.measureText(txt).width + fs * 0.9, hh = fs * 1.7; // the box fits its counter
+        ctx.fillStyle = '#e8332f';
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(sx, y, w, hh, fs * 0.4) : ctx.rect(sx, y, w, hh); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(sx + w * 0.5 - fs * 0.35, y + hh); ctx.lineTo(sx + w * 0.5 + fs * 0.35, y + hh); ctx.lineTo(sx + w * 0.5, y + hh + fs * 0.4); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(txt, sx + fs * 0.45, y + hh * 0.7);
       });
       // the tall calm figure in the far layer. 0 0 0. she never reacts.
       this.decor(camX, 0.12, 90, (i, sx, s) => {
@@ -389,8 +402,9 @@
               S.drawBoxStackUnit(ctx, Cg.BOX_W * S.R, Cg.BOX_H * S.R, i + e.n);
               ctx.restore();
             }
-            ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = '600 10px ' + FONT; ctx.textAlign = 'center';
-            ctx.fillText('≥' + Math.round(game.smashThreshold), 0, -e.n * Cg.BOX_H * S.R - 6);
+            ctx.font = '700 11px ' + FONT; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+            ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText('≥' + Math.round(game.smashThreshold), 0, -e.n * Cg.BOX_H * S.R - 6);
+            ctx.fillStyle = '#fff'; ctx.fillText('≥' + Math.round(game.smashThreshold), 0, -e.n * Cg.BOX_H * S.R - 6);
             break;
           }
           case 'goldship': {
@@ -487,7 +501,7 @@
     drawPopups(game) {
       const ctx = this.ctx;
       for (const p of game.popups) {
-        const sx = this.wx(p.x), sy = this.wy(p.y);
+        const sx = clamp(this.wx(p.x), 44, this.W - 44), sy = this.wy(p.y);
         const a = clamp(p.life / p.ttl, 0, 1);
         ctx.save(); ctx.globalAlpha = Math.min(1, a * 1.5); ctx.translate(sx, sy);
         ctx.font = '700 ' + Math.round(9 + 7 * p.size + this.scale * 0.15) + 'px ' + FONT; ctx.textAlign = 'center';
@@ -500,7 +514,7 @@
     // ---- subtitle bar ---------------------------------------------------------
     drawSubtitles(game) {
       const ctx = this.ctx, W = this.W, H = this.H;
-      const base = H * 0.92;
+      const base = H * 0.92 - (this.safeBottom || 0);
       const px = Math.round(H * 0.055);
       const line = (text, y, scale, color) => {
         ctx.font = 'bold ' + Math.round(px * (scale || 1)) + 'px ' + SUB_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -515,9 +529,10 @@
           if (txt) {
             // full-width glyphs: chars per line without measureText; stack upward, cap 3 lines
             const perLine = Math.max(4, Math.floor(W * 0.9 / px));
+            const maxLines = this.small ? 2 : 3; // on a phone a third line would cover the track ahead
             const lines = [];
-            for (let i = 0; i < txt.length && lines.length < 3; i += perLine) lines.push(txt.slice(i, i + perLine));
-            if (txt.length > perLine * 3) game.subtitleOverflow = true;
+            for (let i = 0; i < txt.length && lines.length < maxLines; i += perLine) lines.push(txt.slice(i, i + perLine));
+            if (txt.length > perLine * maxLines) game.subtitleOverflow = true;
             for (let i = 0; i < lines.length; i++) line(lines[i], base - (lines.length - 1 - i) * px * 1.1, 1);
           }
         }
@@ -553,7 +568,7 @@
     drawHUD(game) {
       const ctx = this.ctx, W = this.W, H = this.H;
       const small = this.small;
-      const pad = small ? 10 : 16;
+      const pad = (small ? 10 : 16) + (this.safeTop || 0);
       const Cg = BH.game.C;
       ctx.textBaseline = 'top';
       const txt = (t, x, y, size, color, align, weight) => {
@@ -574,7 +589,7 @@
       txt(spd.toFixed(0) + ' m/s' + (feeding ? ' 🔥' : ''), W - pad, pad + (small ? 38 : 50), small ? 11 : 13, feeding ? '#ffb347' : '#cfcfcf', 'right', 400);
       // clout bar
       const bw = Math.min(W * 0.4, 360), bh = small ? 12 : 16;
-      const bx = (W - bw) / 2, by = pad + 4;
+      const bx = (W - bw) / 2, by = small ? pad + 66 : pad + 4; // phones: under the likes stack, not beside it
       const cap = game.cloutCap;
       const frac = clamp(game.clout / Cg.CLOUT_MAX, 0, 1);
       const low = game.clout < Cg.CLOUT_LOW && !game.grace;
@@ -592,7 +607,8 @@
       if (pk.length) {
         ctx.font = (small ? 13 : 16) + 'px ' + FONT; ctx.textAlign = 'left'; ctx.globalAlpha = 0.85;
         let x = pad;
-        for (const id of pk) { ctx.fillText(BH.game.PERK_BY_ID[id].emoji, x, H - pad - (small ? 14 : 18)); x += small ? 18 : 22; }
+        const py = H - (small ? 10 : 16) - (this.safeBottom || 0) - (small ? 14 : 18);
+        for (const id of pk) { ctx.fillText(BH.game.PERK_BY_ID[id].emoji, x, py); x += small ? 18 : 22; }
         ctx.globalAlpha = 1;
       }
       // grace: cancelled?
@@ -608,7 +624,7 @@
       // hint for the first runs
       if (game.hint > 0 && game.state === 'playing') {
         ctx.globalAlpha = Math.min(1, game.hint);
-        txt(small ? 'hold = dive · release at the top to fly · hold in the air to flip' : 'hold to dive on downhills  ·  release at the crest to fly  ·  hold in the air to flip  ·  land flat', W / 2, H * 0.84, small ? 11 : 15, '#fff', 'center', 400);
+        txt(small ? 'hold = dive · release at the top to fly · hold in the air to flip' : 'hold to dive on downhills  ·  release at the crest to fly  ·  hold in the air to flip  ·  land flat', W / 2, small ? H * 0.76 : H * 0.84, small ? 11 : 15, '#fff', 'center', 400);
         ctx.globalAlpha = 1;
       }
       // speed lines, subtle

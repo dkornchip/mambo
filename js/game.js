@@ -36,13 +36,13 @@
     HITSTOP: { perfect: 0.04, smash: 0.07, bonk: 0.11, gegg: 0.025, goldship: 0.3, clutch: 0.12 },
     CLOUT_MAX: 100,
     CLOUT_DRAIN: 4.8,
-    CLOUT_DRAIN_TIER: 1.2,     // the algorithm wants more every lap
+    CLOUT_DRAIN_TIER: 2.4,     // the algorithm wants more every lap (a perfect diver must still lose eventually)
     CLOUT_SPEED_PAUSE: 18,
-    CLOUT_PAUSE_TIER: 1.5,     // ...and faster every lap
+    CLOUT_PAUSE_TIER: 3.0,     // ...and faster every lap
     CLOUT_LOW: 25,
     CLOUT_EGG: 0.8, CLOUT_SPICY: 8, CLOUT_GEGG: 15, CLOUT_CHICKEN: 0.3, CLOUT_CLEAN: 3, CLOUT_PERFECT: 6, CLOUT_FLIP: 3, CLOUT_TEIO: 15, CLOUT_SMASH: 2,
     OVERFLOW_LIKES: 2,         // likes per point of clout gained above the cap (x mult)
-    GRACE_TIME: 2.5, GRACE_SCALE: 0.5, CLUTCH_NEED: 5, CLUTCH_CLOUT: 15, CLUTCH_FREEZE: 2, CLUTCH_COOLDOWN: 30,
+    GRACE_TIME: 2.5, GRACE_SCALE: 0.5, PERK_SCALE: 0.12, CLUTCH_NEED: 5, CLUTCH_CLOUT: 15, CLUTCH_FREEZE: 2, CLUTCH_COOLDOWN: 30,
     COMBO_IDLE: 5.0, COMBO_DECAY_EVERY: 0.6,
     SMASH_BELOW_PAUSE: 3,      // smash threshold = pause threshold - 3 (one number to read)
     BOX_W: 1.3, BOX_H: 1.05,
@@ -57,9 +57,9 @@
     { id: 'magnet', name: 'Egg Magnet', emoji: '🧲', desc: 'Eggs come to you. The chickens were not consulted.' },
     { id: 'heavy', name: 'Premium Cardboard', emoji: '📦', desc: '+25% dive. It is the same box.' },
     { id: 'feather', name: 'Mostly Air', emoji: '🪶', desc: '-20% air gravity. The box was mostly air anyway.' },
-    { id: 'insurance', name: 'Clout Insurance', emoji: '🛡️', desc: '-30% drain. Terms apply.' },
+    { id: 'insurance', name: 'Clout Insurance', emoji: '🛡️', desc: '-15% drain. Terms apply.' },
     { id: 'secondwind', name: 'Reupload', emoji: '💊', desc: 'If you get cancelled, come back at 50. Same content.', notFirst: true },
-    { id: 'whisperer', name: '土鸡土鸡蛋蛋', emoji: '🐔', desc: 'Chickens x3. The song is louder.' },
+    { id: 'whisperer', name: '土鸡土鸡蛋蛋', latin: 'tu ji tu ji dan dan', emoji: '🐔', desc: 'Chickens x3. The song is louder.' },
     { id: 'smash', name: 'Boxes Are Free', emoji: '💥', desc: 'Box stacks break 30% easier.' },
     { id: 'goblin', name: 'Egg Content', emoji: '🥚', desc: '+50% clout from eggs.' },
     { id: 'trick', name: 'Flip Content', emoji: '🌀', desc: 'Flips are worth 2x. Each flip is a comment.' },
@@ -81,6 +81,9 @@
       opts = opts || {};
       this.seed = opts.seed >>> 0;
       this.mode = opts.mode || 'endless';
+      this.dailyKey = opts.dailyKey || null;
+      // attract and sim games are silent: the title screen must not play SFX, bots must not touch audio
+      this.audio = (this.mode === 'attract' || this.mode === 'sim') ? { play() {}, setBiome() {}, setTempo() {} } : BH.audio;
       this.charId = CHARACTERS[opts.charId] ? opts.charId : 'tann';
       this.char = CHARACTERS[this.charId];
       this.hat = opts.hat || 'none';
@@ -129,7 +132,7 @@
     on(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
     emit(ev, data) {
       const e = Object.assign({ t: +this.time.toFixed(3), type: ev }, data || {});
-      this.events.push(e); if (this.events.length > 800) this.events.splice(0, 200);
+      this.events.push(e); if (this.events.length > 4000) this.events.splice(0, 1000);
       const l = this.listeners[ev]; if (l) for (const fn of l) fn(e);
       const any = this.listeners['*']; if (any) for (const fn of any) fn(e);
     }
@@ -137,7 +140,7 @@
     hasPerk(id) { return !!this.perks[id]; }
     get mult() { return Math.min(this.perks.clickbait ? 6 : C.MULT_CAP, 1 + C.MULT_PER_COMBO * this.combo); }
     get pauseThreshold() { return C.CLOUT_SPEED_PAUSE + C.CLOUT_PAUSE_TIER * this.tier - (this.perks.hack ? 3 : 0) - (this.perks.doomscroll ? 4 : 0); }
-    get drainRate() { return (C.CLOUT_DRAIN + C.CLOUT_DRAIN_TIER * this.tier) * (this.perks.insurance ? 0.7 : 1) * (this.perks.ragebait ? 1.3 : 1); }
+    get drainRate() { return (C.CLOUT_DRAIN + C.CLOUT_DRAIN_TIER * this.tier) * (this.perks.insurance ? 0.85 : 1) * (this.perks.ragebait ? 1.3 : 1); }
     get cloutCap() { return this.perks.doomscroll ? 60 : C.CLOUT_MAX; }
     get smashThreshold() { return (this.pauseThreshold - C.SMASH_BELOW_PAUSE) * (this.perks.smash ? 0.7 : 1); }
     get feeding() { return Math.hypot(this.rider.vx, this.rider.vy) >= this.pauseThreshold; }
@@ -154,7 +157,7 @@
       return g.repeat(Math.max(1, Math.ceil(n / g.length)));
     }
 
-    addLikes(n) { const v = Math.round(n * (this.perks.ragebait ? 1.5 : 1)); this.likes += v; return v; }
+    addLikes(n) { if (this.state === 'over') return 0; const v = Math.round(n * (this.perks.ragebait ? 1.5 : 1)); this.likes += v; return v; }
     addClout(v) {
       if (this.state === 'over') return;
       if (this.grace) this.grace.gained += v;
@@ -213,12 +216,13 @@
         const nChick = rng.chance(0.9 * chickenDens * dens) ? (biome === 'farm' ? rng.int(1, 3) : 1) : 0;
         for (let i = 0; i < nChick; i++) this.entities.push(this._chicken(seg.x0 + w * rng.range(0.1, 0.8)));
         const pGold = { street: 0.05, farm: 0.06, gym: 0.09, void: 0.1 }[biome];
-        const gx = seg.x0 + w * 0.92;
+        const gx = seg.x1 + 4; // just past the crest: a launched rider is ~1 m up here, a grounded one meets her
         if (seg.x0 > 120 && gx - this.lastHardX >= C.HARD_SPACING && rng.chance(pGold)) {
           const trio = tier >= 2 && rng.chance(0.05);
           for (let i = 0; i < (trio ? 3 : 1); i++) {
-            const x = gx - i * 2.3;
-            this.entities.push({ type: 'goldship', x, y: T.heightAt(x), r: 0.9, alive: true, done: false, trio });
+            const x = gx + i * 2.3;
+            // y is resolved lazily (needY): the next segment is not generated yet
+            this.entities.push({ type: 'goldship', x, y: seg.y1, needY: true, r: 0.9, alive: true, done: false, trio });
           }
           this.lastHardX = gx;
         }
@@ -235,7 +239,7 @@
           }
           if ((biome === 'void' || tier > 0 || (biome === 'farm' && rng.chance(0.5))) && rng.chance(0.3)) {
             const x = crestX + 2 + (n / 2) * spread;
-            this.entities.push({ type: 'gegg', x, y: crestY + 2 + lift * 1.6 + 2.5, r: 0.55, alive: true, bob: 0, air: true });
+            this.entities.push({ type: 'gegg', x, y: crestY + lift * 1.6 - 4.5, r: 0.55, alive: true, bob: 0, air: true });
           }
         }
       }
@@ -339,7 +343,7 @@
             r.s += C.PUSH_ACCEL * dt;
           }
         } else if (r.s > C.PUSH_UNTIL) { r.stuckT = 0; r.pushing = false; }
-        if (r.pushing && r.s < C.PUSH_UNTIL) r.s += C.PUSH_ACCEL * dt;
+        if (r.pushing && r.s < C.PUSH_UNTIL) r.s += (C.PUSH_ACCEL + Math.max(0, gEff * Math.sin(theta))) * dt; // paddling beats any slope
         r.s = clamp(r.s, -8, C.MAX_SPEED);
         const ct = Math.cos(theta), st = Math.sin(theta);
         r.vx = r.s * ct; r.vy = r.s * st;
@@ -370,7 +374,7 @@
           // a real launch, not a micro-hop: whoosh + a scream whose pitch tracks speed
           r.launchSfx = true;
           const sp = Math.hypot(r.vx, r.vy);
-          BH.audio.play('launch'); BH.audio.play('scream', { dur: Math.min(1.2, 0.3 + sp / 40), speed: sp });
+          this.audio.play('launch'); this.audio.play('scream', { dur: Math.min(1.2, 0.3 + sp / 40), speed: sp });
         }
         const gAir = C.G * this.char.airGrav * (P.feather ? 0.8 : 1) * (held ? 1 + C.DIVE_AIR * (P.heavy ? 1.25 : 1) : 1);
         r.vy -= gAir * dt;
@@ -407,14 +411,14 @@
 
       const speed = Math.hypot(r.vx, r.vy);
       if (speed > this.maxSpeed) this.maxSpeed = speed;
-      if (r.x > this.distance) this.distance = r.x;
+      if (this.state !== 'over' && r.x > this.distance) this.distance = r.x;
 
       // biome / tier tracking
       const b = biomeAt(Math.max(0, r.x)); const tier = tierAt(Math.max(0, r.x));
       if (b !== this.biome || tier !== this.tier) {
         const first = this.biome !== b;
-        this.biome = b; this.tier = tier; BH.audio.setBiome(b); BH.audio.setTempo(148 + tier * 10);
-        if (b === 'gym') BH.audio.play('bell');
+        this.biome = b; this.tier = tier; this.audio.setBiome(b); this.audio.setTempo(148 + tier * 10);
+        if (b === 'gym') this.audio.play('bell');
         if (first && tier > 0 && b === 'street') this.note('(lap ' + (tier + 1) + ')', 1.5);
         this.emit('biome', { biome: b, tier });
       }
@@ -436,7 +440,7 @@
         }
         if (this.clout < C.CLOUT_LOW && !this.grace) {
           this.cloutWarnT += dt;
-          if (this.cloutWarnT > 1.0) { this.cloutWarnT = 0; BH.audio.play('heartbeat'); }
+          if (this.cloutWarnT > 1.0) { this.cloutWarnT = 0; this.audio.play('heartbeat'); }
         }
         this.comboIdle += dt;
         if (this.combo > 0 && this.comboIdle > C.COMBO_IDLE) {
@@ -493,13 +497,13 @@
           this.addClout(C.CLOUT_FLIP * flips);
           this.popup(r.x, r.y + 2.2, (flips > 1 ? flips + ' flips +' : 'flip +') + worth, '#ddd', 0.9);
           this.bumpCombo(flips);
-          BH.audio.play('flip');
+          this.audio.play('flip');
         }
         if (perfect) {
           r.s = Math.min(C.MAX_SPEED, r.s * C.PERFECT_BOOST); this.perfects++; this.perfectStreak++;
           this.addClout(C.CLOUT_PERFECT);
           this.sub(this.cjk ? '哦耶' : 'oh yeah', 0.8, 1.1);
-          this.bumpCombo(1); BH.audio.play('perfect');
+          this.bumpCombo(1); this.audio.play('perfect');
           this.hitStop = Math.max(this.hitStop, C.HITSTOP.perfect);
           if (this.biome === 'gym') this.faceCam = 0.32;
           if (this.perfectStreak === 3) { this.drainFreeze = C.STREAK_FREEZE; this.note('(three in a row)', 1.5); if (!this.passenger) { this.passenger = { t: 10 }; this.note('(she got in the box)', 1.6); } }
@@ -509,7 +513,7 @@
           this.cleans++; this.perfectStreak = 0;
           this.addClout(C.CLOUT_CLEAN);
           this.sub(this.cjk ? '哦耶' : 'oh yeah', 0.6, 1);
-          this.bumpCombo(1); BH.audio.play(flips > 0 ? 'ohyeah' : 'land');
+          this.bumpCombo(1); this.audio.play(flips > 0 ? 'ohyeah' : 'land');
           this.emit('land', { kind: 'clean', flips, diff: +diff.toFixed(1), s: +r.s.toFixed(1) });
         }
         r.squashX = 1.25; r.squashY = 0.8;
@@ -519,7 +523,7 @@
         r.s = Math.max(0, sTan) * C.SKETCHY_SPEED; this.sketchies++; this.perfectStreak = 0;
         this.sub(this.cjk ? '哎呀' : 'woah', 0.5, 0.9);
         r.squashX = 1.4; r.squashY = 0.7; r.wobble = 0.5;
-        BH.audio.play('woah');
+        this.audio.play('woah');
         this.burst(r.x, r.y - 0.5, 'dust', 4);
         this.emit('land', { kind: 'sketchy', flips, diff: +diff.toFixed(1), s: +r.s.toFixed(1) });
       } else {
@@ -537,10 +541,10 @@
       this.shake = Math.max(this.shake, 1.0); this.hitStop = Math.max(this.hitStop, C.HITSTOP.bonk);
       r.squashX = 1.6; r.squashY = 0.5;
       this.sub(this.cjk ? '啊' : 'a', 0.4, 0.6); this.subBlank = 0.8;
-      BH.audio.play('bonk'); BH.audio.play('scream', { dur: 0.45, speed: 8 });
+      this.audio.play('bonk'); this.audio.play('scream', { dur: 0.45, speed: 8 });
       this.burst(r.x, r.y, 'spark', 8);
       if (this.passenger) { this.passenger = null; this.note('(she got out)', 1.2); }
-      if (this.grace) { this._gameOver('clout'); }
+      if (this.grace) this._graceExpired(); // a bonk ends grace; Reupload still honoured
       this.emit('bonk', Object.assign({ src }, extra || {}));
     }
 
@@ -565,13 +569,14 @@
       if (this.recentChickens.length >= 3) { this.sub(this.cjk ? '土鸡土鸡蛋蛋' : 'tu ji tu ji dan dan', 1.2, 1); this.recentChickens.length = 0; }
       else if (this.chickenRain <= 0) this.sub(this.cjk ? '土鸡' : 'tu ji', 0.5, 1);
       this.popup(e.x, e.y + 1.5, '+' + worth, '#ddd', 0.8);
-      BH.audio.play('chicken');
+      this.audio.play('chicken');
       this.burst(e.x, e.y + 0.5, 'feather', 10, e.color === 'white' ? '#f6f2e6' : '#c9733f');
       this.particles.push({ kind: 'chicken', color: e.color, x: e.x, y: e.y + 0.5, vx: speed * 0.5 + 3, vy: 9 + this.fxRng() * 4, life: 2.5, ttl: 2.5, rot: 0, rotV: 9, size: 1, grav: 14, drag: 0.2, ground: false });
       this.emit('chicken');
     }
 
     _updateEntities(dt) {
+      if (this.state === 'over') return; // the dead box rolls, but it does not score
       const r = this.rider; const T = this.terrain; const P = this.perks;
       const rx = r.x, ry = r.y;
       const speed = Math.hypot(r.vx, r.vy);
@@ -586,9 +591,10 @@
         switch (e.type) {
           case 'egg':
           case 'gegg': {
+            if (e.air && !e.placed) { e.placed = true; const gy = T.heightAt(e.x) + 0.55; if (e.y < gy) e.y = gy; }
             if (P.magnet) {
               const dy0 = e.y - ry; const d = Math.hypot(dx, dy0);
-              if (d < 3.5 && d > 0.01) { const pull = 18 * dt / d; e.x -= dx * pull; e.y -= dy0 * pull; }
+              if (d < 2.5 && d > 0.01) { const pull = 18 * dt / d; e.x -= dx * pull; e.y -= dy0 * pull; }
             }
             const dy = e.y - ry;
             if (dx * dx + dy * dy < (e.r + rr) * (e.r + rr)) {
@@ -598,13 +604,13 @@
                   const worth = this.addLikes(10 * this.mult);
                   this.eggs++; this.addClout(C.CLOUT_SPICY * (P.goblin ? 1.5 : 1)); this.bumpCombo(3);
                   this.popup(e.x, e.y + 0.6, '+' + worth, '#ff6b6b', 0.9); this.note('(spicy egg)', 0.9);
-                  BH.audio.play('goldenEgg'); this.burst(e.x, e.y, 'spark', 8, '#ff4d4d');
+                  this.audio.play('goldenEgg'); this.burst(e.x, e.y, 'spark', 8, '#ff4d4d');
                   this.emit('egg', { air: !!e.air, spicy: true });
                 } else {
                   const worth = this.addLikes(5 * this.mult);
                   this.eggs++; this.addClout(C.CLOUT_EGG * (P.goblin ? 1.5 : 1)); this.bumpCombo(1);
                   this.popup(e.x, e.y + 0.6, '+' + worth, '#ccc', 0.6);
-                  BH.audio.play('egg', this.combo); this.burst(e.x, e.y, 'heart', 2);
+                  this.audio.play('egg', this.combo); this.burst(e.x, e.y, 'heart', 2);
                   this.emit('egg', { air: !!e.air });
                 }
               } else {
@@ -612,7 +618,7 @@
                 this.eggs++; this.addClout(C.CLOUT_GEGG); this.bumpCombo(3);
                 this.sub(this.cjk ? '蛋蛋！' : 'dan dan!', 0.9, 1.2);
                 this.popup(e.x, e.y + 0.8, '+' + worth, '#ffd34d', 1.1);
-                BH.audio.play('goldenEgg'); this.burst(e.x, e.y, 'spark', 14, '#ffd34d');
+                this.audio.play('goldenEgg'); this.burst(e.x, e.y, 'spark', 14, '#ffd34d');
                 this.shake = Math.max(this.shake, 0.4); this.hitStop = Math.max(this.hitStop, C.HITSTOP.gegg);
                 if (this.biome === 'farm') this._chickenRain();
                 this.emit('gegg');
@@ -649,7 +655,7 @@
                 this.hitStop = Math.max(this.hitStop, C.HITSTOP.smash); this.shake = Math.max(this.shake, 0.5 + 0.2 * e.n);
                 this.sub(this.cjk ? '啊啊啊' : 'AAA', 0.5, 1.3);
                 this.popup(e.x, top + 0.8, '+' + worth, '#ddd', 0.9);
-                BH.audio.play('smash');
+                this.audio.play('smash');
                 this.burst(e.x, e.y + e.n * 0.5, 'card', 6 + 4 * e.n);
                 this.emit('smash', { n: e.n, s: +speed.toFixed(1) });
               } else {
@@ -661,12 +667,13 @@
             break;
           }
           case 'goldship': {
+            if (e.needY) { e.needY = false; e.y = T.heightAt(e.x); }
             if (e.done) break;
             if (e.trio && !this.trioSeen && dx < 40) { this.trioSeen = true; this.note('(three of them)', 2); }
             const dy = (e.y + 0.8) - ry;
-            if (!grounded && Math.abs(dx) < 1.2 && ry - C.RIDER_LIFT > e.y + 1.4) {
+            if (!grounded && Math.abs(dx) < 1.2 && ry - C.RIDER_LIFT > e.y + 1.0) {
               e.done = true; this.flexes++;
-              const close = ry - C.RIDER_LIFT < e.y + 2.4;
+              const close = ry - C.RIDER_LIFT < e.y + 2.0;
               const worth = this.addLikes((close ? 60 : 30) * this.mult);
               this.bumpCombo(2);
               this.note(close ? "(she almost looked up)" : "(she didn't look up)", 1.4);
@@ -678,21 +685,21 @@
               const roll = this.fxRng();
               this.hitStop = Math.max(this.hitStop, C.HITSTOP.goldship); this.shake = Math.max(this.shake, 0.8);
               this.burst(e.x, e.y + 1, 'card', 8);
-              BH.audio.play('smash');
+              this.audio.play('smash');
               if (P.pact || roll < 0.7) {
                 this.goldshipBoosts++;
                 r.grounded = false; r.airTime = 0; r.spin = 0; r.angVel = 0; r.lastAngles.length = 0;
                 const s = Math.min(C.MAX_SPEED, Math.max(speed * 1.35, speed + 9));
                 r.vx = s * 0.86; r.vy = Math.min(13, s * 0.45 + 2); r.y += 0.3;
                 this.forcedScream = 0.8; this.forcedN = 24; this.note('(good)', 1.2);
-                BH.audio.play('scream', { dur: 0.8, speed: s });
+                this.audio.play('scream', { dur: 0.8, speed: s });
                 this.emit('goldship', { outcome: 'boost' });
               } else if (roll < 0.9) {
                 this.goldshipKicks++;
                 r.s = speed * 0.7; r.vx = r.s * Math.cos(T.angleAt(r.x)); r.vy = r.s * Math.sin(T.angleAt(r.x));
                 r.stun = C.STUN; r.squashX = 1.5; r.squashY = 0.6;
                 this.sub(this.cjk ? '啊' : 'a', 0.4, 0.6); this.subBlank = 0.8; this.note('(bad)', 1.2);
-                BH.audio.play('bonk');
+                this.audio.play('bonk');
                 this.emit('goldship', { outcome: 'shove' });
               } else {
                 this.goldshipJackpots++;
@@ -700,7 +707,7 @@
                 const s = Math.min(C.MAX_SPEED, Math.max(speed * 1.2, speed + 6));
                 r.vx = s * 0.7; r.vy = 17; r.y += 0.3;
                 this.forcedScream = 1.4; this.forcedN = 48; this.note('(very good)', 1.6);
-                BH.audio.play('scream', { dur: 1.2, speed: 36 });
+                this.audio.play('scream', { dur: 1.2, speed: 36 });
                 this.emit('goldship', { outcome: 'jackpot' });
               }
             }
@@ -712,7 +719,7 @@
               e.done = true;
               this.addClout(C.CLOUT_TEIO);
               this.sub(this.cjk ? '加油！' : 'go go!', 1.0, 1);
-              BH.audio.play('cheer'); this.burst(e.x, e.y + 1.5, 'heart', 10);
+              this.audio.play('cheer'); this.burst(e.x, e.y + 1.5, 'heart', 10);
               this.emit('teio', { biome: biomeAt(e.x), tier: tierAt(e.x), index: e.index });
               if (this.state === 'playing') this._openPerks();
             }
@@ -742,28 +749,30 @@
       this.emit('grace');
     }
     _clutch() {
-      this.grace = null; this.timeScale = 1; this.clutches++;
+      this.grace = null; this.timeScale = this.state === 'perk' ? C.PERK_SCALE : 1; this.clutches++;
       this.clout = C.CLUTCH_CLOUT; this.drainFreeze = C.CLUTCH_FREEZE; this.graceCooldown = C.CLUTCH_COOLDOWN;
-      this.note('(clutch)', 1.5); BH.audio.play('clutch'); this.hitStop = Math.max(this.hitStop, C.HITSTOP.clutch);
+      this.note('(clutch)', 1.5); this.audio.play('clutch'); this.hitStop = Math.max(this.hitStop, C.HITSTOP.clutch);
       this.emit('clutch');
     }
     _graceExpired() {
-      this.grace = null; this.timeScale = 1;
+      this.grace = null; this.timeScale = this.state === 'perk' ? C.PERK_SCALE : 1;
       if (this.perks.secondwind && !this.secondWindUsed) {
         this.secondWindUsed = true; this.clout = 50; this.graceCooldown = C.CLUTCH_COOLDOWN;
-        this.note('(reuploaded)', 1.6); BH.audio.play('revive');
+        this.note('(reuploaded)', 1.6); this.audio.play('revive');
         this.emit('revive');
       } else this._gameOver('clout');
     }
 
     // ---- perks --------------------------------------------------------------
     _openPerks() {
+      if (this.grace) this._clutch(); // never let grace and the picker overlap (the cheer's +15 already clutches)
       const avail = PERKS.filter((p) => !this.perks[p.id] && !(p.notFirst && this.perkCount === 0));
       const rng = this.spawnRng;
       const choices = [];
       while (choices.length < 3 && avail.length) choices.push(avail.splice(Math.floor(rng() * avail.length), 1)[0]);
       while (choices.length < 3) choices.push(Object.assign({}, FILLER, { id: 'filler' + choices.length }));
-      this.perkChoices = choices; this.perkTimer = 4.5; this.state = 'perk'; this.timeScale = 0.12;
+      this.perkChoices = this.cjk ? choices : choices.map((p) => (p.latin ? Object.assign({}, p, { name: p.latin }) : p));
+      this.perkTimer = 4.5; this.state = 'perk'; this.timeScale = C.PERK_SCALE;
       this.emit('perkOffer', { choices: choices.map((c) => c.id) });
     }
     choosePerk(i) {
@@ -771,8 +780,8 @@
       const p = this.perkChoices[clamp(i | 0, 0, this.perkChoices.length - 1)];
       if (p.filler) this.addClout(30); else this.perks[p.id] = true;
       this.perkCount++;
-      this.perkChoices = null; this.state = 'playing'; this.timeScale = 1;
-      this.note('(' + p.name + ')', 1.4); BH.audio.play('pick');
+      this.perkChoices = null; this.state = 'playing'; this.timeScale = this.grace ? C.GRACE_SCALE : 1;
+      this.note('(' + p.name + ')', 1.4); this.audio.play('pick');
       this.emit('perk', { id: p.id });
     }
 
@@ -787,7 +796,7 @@
       else if (speed < 5) this.deathLine = 'You stopped moving. So did they.';
       else this.deathLine = 'The algorithm moved on.';
       this.subtitle = null; this.subNote = null;
-      BH.audio.play('gameover');
+      this.audio.play('gameover');
       this.emit('gameover', { reason, likes: this.likes, distance: Math.round(this.distance), comments: this.comments, maxCombo: this.maxCombo, perks: Object.keys(this.perks) });
     }
 

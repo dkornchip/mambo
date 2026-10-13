@@ -40,16 +40,17 @@
       this.refreshMute();
     }
 
-    refreshMute() { this.muteBtn.textContent = this.app.save.muted ? '🔇' : '🔊'; }
+    refreshMute() { this.muteBtn.textContent = this.app.save.muted ? '🔇' : '🔊'; if (this.soundBtn) this.soundBtn.textContent = this.app.save.muted ? 'sound: off' : 'sound: on'; }
 
     show(id) {
       for (const k in this.screens) this.screens[k].classList.toggle('hidden', k !== id);
       this.current = id;
+      this.root.classList.toggle('menu', true);
       if (id === 'title') this.refreshTitle();
       if (id === 'chars') this.buildChars();
       if (id === 'hats') this.buildHats();
     }
-    hideAll() { for (const k in this.screens) this.screens[k].classList.add('hidden'); this.current = null; }
+    hideAll() { for (const k in this.screens) this.screens[k].classList.add('hidden'); this.current = null; this.root.classList.toggle('menu', false); }
 
     nextUnlock() {
       const sv = this.app.save;
@@ -75,7 +76,9 @@
       this.dailyBtn = daily;
       const chars = el('button', 'btn', 'characters'); chars.addEventListener('click', () => this.show('chars'));
       const hats = el('button', 'btn', 'hats'); hats.addEventListener('click', () => this.show('hats'));
-      btns.append(play, daily, chars, hats);
+      const snd = el('button', 'btn small'); this.soundBtn = snd;
+      snd.addEventListener('click', () => { this.app.toggleMute(); this.refreshMute(); });
+      btns.append(play, daily, chars, hats, snd);
       card.appendChild(btns);
       card.appendChild(el('div', 'howto', '<b>hold</b> anywhere to dive. dive on downhills for speed. <b>release</b> at the top to fly. <b>hold</b> in the air to backflip. land flat. keep the clout bar up or the algorithm forgets you.'));
       s.appendChild(card);
@@ -89,7 +92,7 @@
         '<span>👤 <b>' + fmt(sv.followers) + '</b> followers</span>' +
         '<span>♥ best <b>' + fmt(sv.bestLikes) + '</b></span>' +
         '<span>📏 best <b>' + fmt(sv.bestDist) + ' m</b></span>' +
-        (sv.bestScream ? '<span>longest 啊 <b>' + sv.bestScream + '</b></span>' : '') +
+        (sv.bestScream ? '<span>longest ' + (this.app.cjk ? '啊' : 'A') + ' <b>' + sv.bestScream + '</b></span>' : '') +
         '<span>runs <b>' + fmt(sv.runs) + '</b></span>';
       this.dailyBtn.innerHTML = 'daily' + (dailyBest ? ' <small>best today ♥ ' + fmt(dailyBest) + '</small>' : ' <small>' + d.key + '</small>');
       this.drawHero();
@@ -170,7 +173,7 @@
     showPerks(game) {
       const s = this.screens.perk; s.innerHTML = '';
       const card = el('div', 'card perk-card');
-      card.appendChild(el('h2', null, (this.app.cjk ? '选一个' : 'pick one') + ' <small>pick one · 1 / 2 / 3</small>'));
+      card.appendChild(el('h2', null, (this.app.cjk ? '选一个' : 'pick one') + ' <small>' + (this.app.cjk ? 'pick one · ' : '') + '1 / 2 / 3</small>'));
       const row = el('div', 'perk-row');
       game.perkChoices.forEach((p, i) => {
         const b = el('button', 'perk');
@@ -197,7 +200,7 @@
       card.appendChild(el('div', 'society', 'We live in a society'));
       const wrap = el('div', 'bubbles');
       const left = el('div', 'bubble-col left');
-      left.appendChild(el('div', 'bubble', '💬 ' + fmt(game.comments) + ' &nbsp; ♥ ' + fmt(game.likes) + ' &nbsp; 👤 +' + fmt(result.followers)));
+      left.appendChild(el('div', 'bubble', '💬 ' + fmt(game.comments) + ' · ♥ ' + fmt(game.likes) + ' · 👤 +' + fmt(result.followers)));
       const lc = el('canvas', 'mini'); lc.width = 150; lc.height = 140; left.appendChild(lc);
       { const ctx = lc.getContext('2d'); ctx.translate(75, 82); ctx.scale(0.85, 0.85);
         ctx.save(); ctx.scale(0.9, 0.9); S.drawBoxBack(ctx); ctx.restore();
@@ -205,21 +208,22 @@
         ctx.save(); ctx.scale(0.9, 0.9); S.drawBoxFront(ctx, { label: '社会' }); ctx.restore(); }
       left.appendChild(el('div', 'cap', 'you, in the box'));
       const right = el('div', 'bubble-col right');
-      right.appendChild(el('div', 'bubble dim', '💬 0 &nbsp; ♥ 0 &nbsp; 👤 0'));
+      right.appendChild(el('div', 'bubble dim', '💬 0 · ♥ 0 · 👤 0'));
       const rc = el('canvas', 'mini tall'); rc.width = 140; rc.height = 230; right.appendChild(rc);
       { const ctx = rc.getContext('2d'); ctx.translate(70, 95); ctx.scale(1.35, 1.35); game.char.draw(ctx, { mouth: game.charId === 'gold' ? 'smug' : 'smile', arms: 'down', hat: game.hat }); }
       right.appendChild(el('div', 'cap', 'you, outside'));
       wrap.append(left, right);
       card.appendChild(wrap);
       card.appendChild(el('div', 'reason', (game.deathLine || 'The algorithm moved on.') + ((result.newLikes || result.newDist) ? ' <span class="rec">(new best)</span>' : '')));
-      const bits = [fmt(game.distance) + ' m', 'combo x' + game.maxCombo, game.flips + ' flips', game.chickens + ' chickens'];
+      const n = (c, one, many) => c + ' ' + (c === 1 ? one : many);
+      const bits = [fmt(game.distance) + ' m', 'combo x' + game.maxCombo, n(game.flips, 'flip', 'flips'), n(game.chickens, 'chicken', 'chickens')];
       if (game.longestScream) bits.push('longest ' + (this.app.cjk ? '啊' : 'A') + ': ' + game.longestScream);
       if (game.subtitleOverflow) bits.push('the subtitle did not fit');
-      if (game.clutches) bits.push(game.clutches + ' clutch');
+      if (game.clutches) bits.push(n(game.clutches, 'clutch', 'clutches'));
       card.appendChild(el('div', 'bits', bits.join(' · ')));
       const nu = this.nextUnlock();
-      card.appendChild(el('div', 'next', nu ? 'next unlock: ' + nu.name + ' · ' + fmt(Math.max(0, nu.price - sv.followers)) + ' more followers' : 'everything is unlocked. it did not help.'));
-      if (game.mode === 'daily') card.appendChild(el('div', 'next', 'daily ' + BH.rng.dailySeed().key + ' · best today ♥ ' + fmt(sv.daily.likes)));
+      card.appendChild(el('div', 'next', nu ? 'next unlock: ' + nu.name + (nu.price <= sv.followers ? ' · you can afford it' : ' · ' + fmt(nu.price - sv.followers) + ' more followers') : 'everything is unlocked. it did not help.'));
+      if (game.mode === 'daily') card.appendChild(el('div', 'next', 'daily ' + game.dailyKey + ' · best today ♥ ' + fmt(sv.daily.likes)));
       const btns = el('div', 'btns row');
       const again = el('button', 'btn primary', 'post again'); again.addEventListener('click', () => this.app.startRun(game.mode));
       const share = el('button', 'btn', 'copy'); share.addEventListener('click', () => this.app.share(game, result, share));
